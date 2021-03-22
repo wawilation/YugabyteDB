@@ -1,0 +1,38 @@
+YT course: https://www.youtube.com/watch?v=kF2v85BcHbE&t=3815s
+
+
+1. Fault tolerance test: https://docs.yugabyte.com/latest/explore/fault-tolerance/linux/
+
+java -jar ./yb-sample-apps.jar --workload SqlInserts \
+                                    --nodes 127.0.0.1:5433, 127.0.0.2:5433, 127.0.0.3:5433 \
+                                    --num_threads_write 3 \
+                                    --num_threads_read 3
+2. Start cluster: Go to bin dir of yugabyte home dir.
+
+	yb-ctl start
+
+3. Start a local cluster with replication factor of 3 (which means 3 nodes):
+
+	yb-ctl --rf 3 create
+
+4. Web-UI: http://127.0.0.1:7000
+
+5. To go to SQL shell (in bin directory):
+
+	ysqlsh
+
+6. Remove a node:
+
+	yb-ctl remove_node 3 --> removes node 3
+
+7. Get universe status:
+
+	yb-ctl status
+
+8. Add a node:
+
+	yb-ctl add_node
+
+9. Benchmarking: https://docs.yugabyte.com/latest/benchmark/
+
+

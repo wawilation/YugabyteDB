@@ -1,0 +1,219 @@
+DEPLOYING YugabyteDB on Multi-Node Cluster
+
+I. Prerequisites
+
+1. Check ulimit
+
+website: https://docs.yugabyte.com/latest/deploy/manual-deployment/system-config/#ulimits
+
+Run the following command to check the ulimit settings.
+
+	$ ulimit -a
+
+The following settings are recommended when running YugabyteDB.
+
+core file size          (blocks, -c) unlimited
+data seg size           (kbytes, -d) unlimited
+scheduling priority             (-e) 0
+file size               (blocks, -f) unlimited
+pending signals                 (-i) 119934
+max locked memory       (kbytes, -l) 64
+max memory size         (kbytes, -m) unlimited
+open files                      (-n) 1048576
+pipe size            (512 bytes, -p) 8
+POSIX message queues     (bytes, -q) 819200
+real-time priority              (-r) 0
+stack size              (kbytes, -s) 8192
+cpu time               (seconds, -t) unlimited
+max user processes              (-u) 12000
+virtual memory          (kbytes, -v) unlimited
+file locks                      (-x) unlimited
+
+You can change values by substituting the -n option for any possible value in the output of ulimit -a. Issue a command in the following form to change a ulimit setting.
+
+$ ulimit -n <value>
+
+-f (file size): unlimited
+-t (cpu time): unlimited
+-v (virtual memory): unlimited [1]
+-l (locked-in-memory size): unlimited
+-n (open files): 64000
+-m (memory size): unlimited [1] [2]
+-u (processes/threads): 64000
+
+Note:
+After changing a ulimit setting, the YB-Master and YB-TServer servers must be restarted in order for the new settings to take effect. Check the /proc/<process pid> file to see the current settings.
+
+Changes made using ulimit may revert following a system restart depending on the system configuration.
+
+These settings should be applied permanently by adding the following in /etc/security/limits.conf.
+
+*                -       core            unlimited
+*                -       data            unlimited
+*                -       fsize           unlimited
+*                -       sigpending      119934
+*                -       memlock         64
+*                -       rss             unlimited
+*                -       nofile          1048576
+*                -       msgqueue        819200
+*                -       stack           8192
+*                -       cpu             unlimited
+*                -       nproc           12000
+*                -       locks           unlimited
+
+On CentOS, /etc/security/limits.d/20-nproc.conf must also be configured to match.
+
+*          soft    nproc     12000
+
+Note:
+After changing a ulimit setting in /etc/security/limits.conf, you will need to log out and back in. To update system processes, you may need to restart.
+
+
+II. Installation
+
+1. Prerequisites
+
+	a. Verify that you have Python 2 or 3 installed.
+		
+		$ python --version
+
+		Python 3.7.3
+
+	b. wget or curl is available. The instructions use the wget command to download files. If you prefer to use curl, you can replace wget with curl -O. To install wget:
+	
+		CentOS: yum install wget
+		Ubuntu: apt install wget
+
+	To install curl:
+		CentOS: yum install curl
+		Ubuntu: apt install curl
+
+2. Download YugabyteDB
+	
+wget https://downloads.yugabyte.com/yugabyte-2.5.1.0-linux.tar.gz
+
+3. Extract the package and then change directories to the YugabyteDB home.
+
+tar xvfz yugabyte-2.5.1.0-linux.tar.gz && cd yugabyte-2.5.1.0/
+
+4. To configure YugabyteDB, run the following shell script.
+
+	$ ./bin/post_install.sh
+
+
+III. Start YB-Masters
+
+1. Run YB-Master servers with command line flags
+
+Run the yb-master server on each of the three nodes as shown below. Note how multiple directories can be provided to the --fs_data_dirs flag. Replace the --rpc_bind_addresses value with the private IP address of the host as well as the set the placement_cloud,placement_region and placement_zone values appropriately. For single zone deployment, use the same value for the placement_zone flag.
+
+./bin/yb-master --master_addresses 192.168.22.20:7100,192.168.22.22:7100,192.168.22.23:7100 --rpc_bind_addresses 192.168.22.20:7100 --fs_data_dirs "/home/centos/disk1,/home/centos/disk2" --placement_cloud aws --placement_region us-west --placement_zone us-west-2a >& /home/centos/disk1/yb-master.out &
+
+Alternatively, you can also create a master.conf file with the following flags and then run yb-master with the --flagfile option as shown below. For each YB-Master server, replace the --rpc-bind-addresses configuration flag with the private IP address of the YB-Master server.
+
+--master_addresses=192.168.22.20:7100,192.168.22.22:7100,192.168.22.23:7100
+--rpc_bind_addresses=192.168.22.20:7100
+--fs_data_dirs=/home/centos/disk1,/home/centos/disk2
+--placement_cloud=aws 
+--placement_region=us-west 
+--placement_zone=us-west-2a 
+
+$ ./bin/yb-master --flagfile master.conf >& /home/centos/disk1/yb-master.out &
+
+
+ip1 (my local laptop): 192.168.22.20
+patroni1: 192.168.22.22
+patroni 2: 192.168.22.23
+
+
+2. Verify health
+
+Make sure all the three YB-Masters are now working as expected by inspecting the INFO log. The default logs directory is always inside the first directory specified in the --fs_data_dirs flag.
+
+$ cat /home/centos/disk1/yb-data/master/logs/yb-master.INFO
+
+
+IV. Start YB-TServers
+
+1. Run YB-TServer with command line flags
+
+Run the yb-tserver server on each of the six nodes as shown below. Note that all of the master addresses have to be provided using the --tserver_master_addrs flag. Replace the --rpc_bind_addresses value with the private IP address of the host as well as the set the placement_cloud,placement_region and placement_zone values appropriately. For single zone deployment, simply use the same value for the --placement_zone flag.
+
+$ ./bin/yb-tserver \
+  --tserver_master_addrs 192.168.22.20:7100,192.168.22.22:7100,192.168.22.23:7100 \
+  --rpc_bind_addresses 192.168.22.20:9100 \
+  --start_pgsql_proxy \
+  --pgsql_proxy_bind_address 192.168.22.20:5433 \
+  --cql_proxy_bind_address 192.168.22.20:9042 \
+  --fs_data_dirs "/home/centos/disk1,/home/centos/disk2" \
+  --placement_cloud aws \
+  --placement_region us-west \
+  --placement_zone us-west-2a \
+  >& /home/centos/disk1/yb-tserver.out &
+
+ip1 (my local laptop): 192.168.22.20
+patroni1: 192.168.22.22
+patroni 2: 192.168.22.23
+
+Alternatively, you can also create a tserver.conf file with the following flags and then run the yb-tserver with the --flagfile) flag as shown here. For each YB-TServer server, replace the RPC bind address flags with the private IP address of the host running the YB-TServer server.
+
+--tserver_master_addrs=192.168.22.20:7100,192.168.22.22:7100,192.168.22.23:7100
+--rpc_bind_addresses=192.168.22.20:9100
+--start_pgsql_proxy
+--pgsql_proxy_bind_address=192.168.22.20:5433
+--cql_proxy_bind_address=192.168.22.20:9042
+--fs_data_dirs=/home/centos/disk1,/home/centos/disk2
+--placement_cloud=aws 
+--placement_region=us-west 
+--placement_zone=us-west-2a 
+
+$ ./bin/yb-tserver --flagfile tserver.conf >& /home/centos/disk1/yb-tserver.out &
+
+2. Verify health
+Make sure all YB-TServer servers are now working as expected by inspecting the INFO log. The default logs directory is always inside the first directory specified in the --fs_data_dirs flag.
+
+You can do this as shown below.
+
+$ cat /home/centos/disk1/yb-data/tserver/logs/yb-tserver.INFO
+
+In each of the four YB-TServer logs, you should see log messages similar to the following:
+
+I0912 16:27:18.296516  8168 heartbeater.cc:305] Connected to a leader master server at 172.151.17.140:7100
+I0912 16:27:18.296794  8168 heartbeater.cc:368] Registering TS with master...
+I0912 16:27:18.297732  8168 heartbeater.cc:374] Sending a full tablet report to master...
+I0912 16:27:18.298435  8142 client-internal.cc:1112] Reinitialize master addresses from file: ../tserver.conf
+I0912 16:27:18.298691  8142 client-internal.cc:1123] New master addresses: 172.151.17.130:7100,172.151.17.220:7100,172.151.17.140:7100
+I0912 16:27:18.311367  8142 webserver.cc:156] Starting webserver on 0.0.0.0:12000
+I0912 16:27:18.311408  8142 webserver.cc:161] Document root: /home/centos/yugabyte/www
+I0912 16:27:18.311574  8142 webserver.cc:248] Webserver started. Bound to: http://0.0.0.0:12000/
+I0912 16:27:18.311748  8142 rpc_server.cc:158] RPC server started. Bound to: 0.0.0.0:9042
+I0912 16:27:18.311828  8142 tablet_server_main.cc:128] CQL server successfully started
+
+In the current YB-Master leader log, you should see log messages similar to the following:
+
+I0912 22:26:32.832296  3162 ts_manager.cc:97] Registered new tablet server { permanent_uuid: "766ec935738f4ae89e5ff3ae26c66651" instance_seqno: 1505255192814357 } with Master
+I0912 22:26:39.111896  3162 ts_manager.cc:97] Registered new tablet server { permanent_uuid: "9de074ac78a0440c8fb6899e0219466f" instance_seqno: 1505255199069498 } with Master
+I0912 22:26:41.055996  3162 ts_manager.cc:97] Registered new tablet server { permanent_uuid: "60042249ad9e45b5a5d90f10fc2320dc" instance_seqno: 1505255201010923 } with Master
+
+
+
+V. Verify Deployment
+
+View the master UI dashboard
+You should now be able to view the master dashboard on the ip address of any master. In our example, this is one of the following URLs:
+
+http://192.168.22.20:7000
+http://192.168.22.22:7000
+http://192.168.22.23:7000
+
+
+*To remove or add nodes:
+./bin/yb-admin --master_addresses 192.168.22.20:7100, 192.168.22.22:7100,192.168.22.23:7100 list_all_masters
+./bin/yb-admin --master_addresses 192.168.22.22:7100,192.168.22.23:7100 change_master_config REMOVE_SERVER 192.168.22.7 7100
+./bin/yb-admin --master_addresses 192.168.22.22:7100,192.168.22.23:7100 change_master_config ADD_SERVER 192.168.22.7 7100
+
+If with error, try ip address of where you are running the command first.
+
+
+
+

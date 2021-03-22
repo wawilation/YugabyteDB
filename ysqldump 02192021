@@ -1,0 +1,14 @@
+./ysql_dump -h 127.0.0.1 -d egemsdb -U postgres -p 5432 -t egemsdb.roles -f /tmp/egemsdb_role_dump.sql
+
+
+./ysql_dump -h <ydb host> -d <databasename> -U <username> -p 5433 -f <path>/<dumpfile>.sql
+
+
+
+
+./ysql_dump -h 20.197.113.125 -d keycloak -U yugabyte -p 5433 -a -f /tmp/ydb_keycloak.sql
+
+
+
+TRIVIA:
+1. Default of 8 shards per table per node
